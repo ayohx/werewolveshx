@@ -106,12 +106,11 @@ export class GameLogic {
       role: null
     });
 
-    // Refresh game state
-    const players = await storage.getPlayersByGameId(gameState.game.id);
-    gameState.players = players;
-    gameState.alivePlayers = players.filter(p => p.isAlive);
+    // Invalidate the cache to force a refresh from DB
+    this.gameStates.delete(gameCode);
 
-    return gameState;
+    // Return the fresh state. We know it exists, so we can assert the type.
+    return await this.getGameState(gameCode) as GameState;
   }
 
   async startGame(gameCode: string, hostId: string): Promise<GameState | null> {

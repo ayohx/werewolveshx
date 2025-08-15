@@ -227,12 +227,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateGame(gameCode: string, updates: Partial<Game>): Promise<Game | undefined> {
-    const [game] = await db
-      .update(games)
-      .set(updates)
-      .where(eq(games.gameCode, gameCode))
-      .returning();
-    return game || undefined;
+    try {
+      const [game] = await db
+        .update(games)
+        .set(updates)
+        .where(eq(games.gameCode, gameCode))
+        .returning();
+      return game || undefined;
+    } catch (error) {
+      console.error(`Error updating game ${gameCode}:`, error);
+      throw error;
+    }
   }
 
   async deleteGame(gameCode: string): Promise<boolean> {
@@ -261,12 +266,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePlayer(gameId: number, playerId: string, updates: Partial<Player>): Promise<Player | undefined> {
-    const [player] = await db
-      .update(players)
-      .set(updates)
-      .where(and(eq(players.gameId, gameId), eq(players.playerId, playerId)))
-      .returning();
-    return player || undefined;
+    try {
+      const [player] = await db
+        .update(players)
+        .set(updates)
+        .where(and(eq(players.gameId, gameId), eq(players.playerId, playerId)))
+        .returning();
+      return player || undefined;
+    } catch (error) {
+      console.error(`Error updating player ${playerId} in game ${gameId}:`, error);
+      throw error;
+    }
   }
 
   async removePlayerFromGame(gameId: number, playerId: string): Promise<boolean> {
@@ -317,18 +327,9 @@ export class DatabaseStorage implements IStorage {
         .values(insertMessage)
         .returning();
       return message;
-    } catch (error: any) {
-      console.error('addChatMessage failed:', error.message || error);
-      // Return a fallback chat message object so callers don’t crash
-      return {
-        id: -1,
-        gameId: insertMessage.gameId,
-        playerId: insertMessage.playerId || null,
-        playerName: insertMessage.playerName,
-        message: insertMessage.message,
-        type: insertMessage.type || 'player',
-        createdAt: new Date()
-      } as any;
+    } catch (error) {
+      console.error('Error adding chat message to DB:', error);
+      throw error;
     }
   }
 
