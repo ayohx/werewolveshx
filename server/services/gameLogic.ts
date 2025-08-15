@@ -1,5 +1,7 @@
 import { storage } from "../storage";
-import { type Game, type Player, type GameSettings } from "../../shared/schema";
+import { db } from '../db';
+import { type Game, type Player, type GameSettings, games, players } from "../../shared/schema";
+import { eq, and } from 'drizzle-orm';
 
 export type Role = 'werewolf' | 'villager' | 'seer' | 'doctor' | 'hunter' | 'witch' | 'bodyguard' | 'minion' | 'jester';
 export type Phase = 'waiting' | 'role_reveal' | 'night' | 'day' | 'voting' | 'game_over';
@@ -27,14 +29,12 @@ export interface GameState {
 }
 
 export class GameLogic {
-  private gameStates: Map<string, GameState> = new Map();
   private timers: Map<string, NodeJS.Timeout> = new Map();
+  private votes: Map<string, Record<string, string>> = new Map();
+  private nightActions: Map<string, Record<string, any>> = new Map();
+  private seerInvestigationsLeft: Map<string, Record<string, number>> = new Map();
 
   async getGameState(gameCode: string): Promise<GameState | undefined> {
-    if (this.gameStates.has(gameCode)) {
-      return this.gameStates.get(gameCode);
-    }
-
     const game = await storage.getGameByCode(gameCode);
     if (!game) return undefined;
 
@@ -51,14 +51,13 @@ export class GameLogic {
       deadPlayers,
       phase: game.currentPhase as Phase,
       phaseTimer: game.phaseTimer || 0,
-      votes: {},
-      nightActions: {},
-      seerInvestigationsLeft: {},
+      votes: this.votes.get(gameCode) || {},
+      nightActions: this.nightActions.get(gameCode) || {},
+      seerInvestigationsLeft: this.seerInvestigationsLeft.get(gameCode) || {},
       werewolfCount,
       villagerCount
     };
 
-    this.gameStates.set(gameCode, gameState);
     return gameState;
   }
 
@@ -86,7 +85,7 @@ export class GameLogic {
   }
 
   async joinGame(gameCode: string, playerId: string, playerName: string): Promise<GameState | null> {
-    const gameState = await this.getGameState(gameCode);
+    let gameState = await this.getGameState(gameCode);
     if (!gameState || gameState.game.status !== 'waiting') return null;
 
     // Check if player already exists
@@ -106,9 +105,6 @@ export class GameLogic {
       role: null
     });
 
-    // Invalidate the cache to force a refresh from DB
-    this.gameStates.delete(gameCode);
-
     // Return the fresh state. We know it exists, so we can assert the type.
     return await this.getGameState(gameCode) as GameState;
   }
@@ -119,14 +115,18 @@ export class GameLogic {
       return null;
     }
 
-    // Assign roles
-    await this.assignRoles(gameState);
+    await db.transaction(async (tx) => {
+      // Assign roles
+      await this.assignRoles(gameCode, gameState, tx);
 
-    // Update game status to role reveal phase
-    await storage.updateGame(gameCode, {
-      status: 'playing',
-      currentPhase: 'role_reveal',
-      phaseTimer: 10
+      // Update game status to role reveal phase
+      await tx.update(games)
+        .set({
+          status: 'playing',
+          currentPhase: 'role_reveal',
+          phaseTimer: 10
+        })
+        .where(eq(games.gameCode, gameCode));
     });
 
     gameState.game.status = 'playing';
@@ -139,9 +139,9 @@ export class GameLogic {
     return gameState;
   }
 
-  private async assignRoles(gameState: GameState): Promise<void> {
-    const players = [...gameState.players];
-    const playerCount = players.length;
+  private async assignRoles(gameCode: string, gameState: GameState, tx: any): Promise<void> {
+    const playersArr = [...gameState.players];
+    const playerCount = playersArr.length;
     const settings = gameState.game.settings as GameSettings;
     const roles: Role[] = [];
 
@@ -167,35 +167,41 @@ export class GameLogic {
 
     // Shuffle and assign
     this.shuffleArray(roles);
-    this.shuffleArray(players);
+    this.shuffleArray(playersArr);
 
-    for (let i = 0; i < players.length; i++) {
-      await storage.updatePlayer(gameState.game.id, players[i].playerId, {
-        role: roles[i]
-      });
-      players[i].role = roles[i];
+    for (let i = 0; i < playersArr.length; i++) {
+      await tx.update(players)
+        .set({ role: roles[i] })
+        .where(and(eq(players.gameId, gameState.game.id), eq(players.playerId, playersArr[i].playerId)));
+
+      playersArr[i].role = roles[i];
 
       // Set seer investigation limit based on settings or default rule (30% of werewolves, minimum 3)
       if (roles[i] === 'seer') {
         const customCount = settings.seerInvestigations;
         const defaultCount = Math.max(3, Math.ceil(werewolfCount * 0.3));
         const seerInvestigations = customCount || defaultCount;
-        gameState.seerInvestigationsLeft[players[i].playerId] = seerInvestigations;
+
+        const gameSeerInvestigations = this.seerInvestigationsLeft.get(gameCode) || {};
+        gameSeerInvestigations[players[i].playerId] = seerInvestigations;
+        this.seerInvestigationsLeft.set(gameCode, gameSeerInvestigations);
       }
     }
 
     // Assign sheriff if enabled
     if (settings.sheriff) {
-      const nonWerewolves = players.filter(p => p.role !== 'werewolf' && p.role !== 'minion');
+      const nonWerewolves = playersArr.filter(p => p.role !== 'werewolf' && p.role !== 'minion');
       if (nonWerewolves.length > 0) {
         const sheriff = nonWerewolves[Math.floor(Math.random() * nonWerewolves.length)];
-        await storage.updatePlayer(gameState.game.id, sheriff.playerId, { isSheriff: true });
+        await tx.update(players)
+          .set({ isSheriff: true })
+          .where(and(eq(players.gameId, gameState.game.id), eq(players.playerId, sheriff.playerId)));
         sheriff.isSheriff = true;
       }
     }
 
-    gameState.players = players;
-    gameState.alivePlayers = players.filter(p => p.isAlive);
+    gameState.players = playersArr;
+    gameState.alivePlayers = playersArr.filter(p => p.isAlive);
   }
 
   async handleVote(gameCode: string, playerId: string, targetId: string): Promise<boolean> {
@@ -216,11 +222,13 @@ export class GameLogic {
       data: null
     });
 
-    gameState.votes[playerId] = targetId;
+    const gameVotes = this.votes.get(gameCode) || {};
+    gameVotes[playerId] = targetId;
+    this.votes.set(gameCode, gameVotes);
 
     // Check if all alive players have voted OR majority has voted (over 50%)
     const totalVoters = gameState.alivePlayers.length;
-    const currentVotes = Object.keys(gameState.votes).length;
+    const currentVotes = Object.keys(this.votes.get(gameCode) || {}).length;
     
     if (currentVotes >= totalVoters || currentVotes > totalVoters * 0.5) {
       // All players voted or majority reached - end voting early
@@ -259,6 +267,7 @@ export class GameLogic {
 
     let actionValid = false;
     let actionMessage = '';
+    const gameSeerInvestigations = this.seerInvestigationsLeft.get(gameCode) || {};
 
     switch (player.role) {
       case 'werewolf':
@@ -272,10 +281,11 @@ export class GameLogic {
         break;
 
       case 'seer':
-        if (actionType === 'investigate' && target && gameState.seerInvestigationsLeft[playerId] > 0) {
+        if (actionType === 'investigate' && target && (gameSeerInvestigations[playerId] || 0) > 0) {
           actionValid = true;
           actionMessage = `The seer has investigated a player.`;
-          gameState.seerInvestigationsLeft[playerId]--;
+          gameSeerInvestigations[playerId]--;
+          this.seerInvestigationsLeft.set(gameCode, gameSeerInvestigations);
         }
         break;
 
@@ -365,7 +375,7 @@ export class GameLogic {
     const gameState = await this.getGameState(gameCode);
     if (!gameState) return;
 
-    const killedPlayers = await this.processNightActions(gameState);
+    const killedPlayers = await this.processNightActions(gameCode, gameState);
     
     // Update killed players
     for (const player of killedPlayers) {
@@ -376,7 +386,7 @@ export class GameLogic {
     // Update game state
     gameState.alivePlayers = gameState.players.filter(p => p.isAlive);
     gameState.deadPlayers = gameState.players.filter(p => !p.isAlive);
-    gameState.nightActions = {};
+    this.nightActions.delete(gameCode);
 
     // Add system message about deaths
     if (killedPlayers.length > 0) {
@@ -409,14 +419,16 @@ export class GameLogic {
     setTimeout(() => this.startDayPhase(gameCode), 2000);
   }
 
-  private async processNightActions(gameState: GameState): Promise<Player[]> {
+  private async processNightActions(gameCode: string, gameState: GameState): Promise<Player[]> {
     const killedPlayers: Player[] = [];
     const werewolfTargets: string[] = [];
     const healerProtected: string[] = [];
     const bodyguardProtected: string[] = [];
+    const nightActions = this.nightActions.get(gameCode) || {};
+    const seerInvestigations = this.seerInvestigationsLeft.get(gameCode) || {};
 
     // Process all night actions
-    Object.entries(gameState.nightActions).forEach(([playerId, action]) => {
+    Object.entries(nightActions).forEach(([playerId, action]) => {
       switch (action.role) {
         case 'werewolf':
           if (action.targetId) werewolfTargets.push(action.targetId);
@@ -432,7 +444,7 @@ export class GameLogic {
           if (action.targetId) {
             const target = gameState.players.find(p => p.playerId === action.targetId);
             if (target) {
-              const investigationsLeft = gameState.seerInvestigationsLeft[playerId] || 0;
+              const investigationsLeft = seerInvestigations[playerId] || 0;
               // Store seer result for later delivery
               storage.addChatMessage({
                 gameId: gameState.game.id,
@@ -461,7 +473,7 @@ export class GameLogic {
         // Kill bodyguard instead
         const bodyguard = gameState.alivePlayers.find(p => 
           p.role === 'bodyguard' && 
-          gameState.nightActions[p.playerId]?.targetId === targetId
+          nightActions[p.playerId]?.targetId === targetId
         );
         if (bodyguard && !killedPlayers.includes(bodyguard)) {
           killedPlayers.push(bodyguard);
@@ -586,7 +598,7 @@ export class GameLogic {
 
     gameState.phase = 'voting';
     gameState.phaseTimer = 60;
-    gameState.votes = {};
+    this.votes.set(gameCode, {});
 
     await storage.addChatMessage({
       gameId: gameState.game.id,
@@ -603,7 +615,7 @@ export class GameLogic {
     const gameState = await this.getGameState(gameCode);
     if (!gameState) return;
 
-    const eliminatedPlayer = this.countVotesAndGetEliminated(gameState);
+    const eliminatedPlayer = this.countVotesAndGetEliminated(gameCode, gameState);
 
     if (eliminatedPlayer) {
       await storage.updatePlayer(gameState.game.id, eliminatedPlayer.playerId, { isAlive: false });
@@ -618,7 +630,7 @@ export class GameLogic {
       });
 
       // Handle special death effects
-      await this.handleSpecialDeath(gameState, eliminatedPlayer, true);
+      await this.handleSpecialDeath(gameCode, gameState, eliminatedPlayer, true);
     } else {
       await storage.addChatMessage({
         gameId: gameState.game.id,
@@ -664,7 +676,7 @@ export class GameLogic {
           playerId: player.playerId,
           completed: false
         });
-      } else if (player.role === 'seer' && gameState.seerInvestigationsLeft[player.playerId] > 0) {
+      } else if (player.role === 'seer' && (this.seerInvestigationsLeft.get(gameCode) || {})[player.playerId] > 0) {
         requiredActions.push({
           role: 'seer',
           actionType: 'investigate',
@@ -711,7 +723,7 @@ export class GameLogic {
     gameState.game.nightCount = nightCount;
     gameState.phase = 'night';
     gameState.phaseTimer = 120;
-    gameState.nightActions = {};
+    this.nightActions.set(gameCode, {});
 
     // Start night phase timer
     this.startPhaseTimer(gameCode, 120, () => this.resolveNightPhase(gameCode));
@@ -726,16 +738,17 @@ export class GameLogic {
     });
   }
 
-  private countVotesAndGetEliminated(gameState: GameState): Player | null {
+  private countVotesAndGetEliminated(gameCode: string, gameState: GameState): Player | null {
     const voteCount: Record<string, number> = {};
+    const gameVotes = this.votes.get(gameCode) || {};
 
     // Count regular votes
-    Object.values(gameState.votes).forEach(targetId => {
+    Object.values(gameVotes).forEach(targetId => {
       voteCount[targetId] = (voteCount[targetId] || 0) + 1;
     });
 
     // Add sheriff bonus votes
-    Object.entries(gameState.votes).forEach(([voterId, targetId]) => {
+    Object.entries(gameVotes).forEach(([voterId, targetId]) => {
       const voter = gameState.alivePlayers.find(p => p.playerId === voterId);
       if (voter?.isSheriff) {
         voteCount[targetId] = (voteCount[targetId] || 0) + 1;
@@ -789,6 +802,9 @@ export class GameLogic {
     gameState.phase = 'game_over';
 
     this.clearTimer(gameCode);
+    this.votes.delete(gameCode);
+    this.nightActions.delete(gameCode);
+    this.seerInvestigationsLeft.delete(gameCode);
 
     await storage.addChatMessage({
       gameId: gameState.game.id,
@@ -799,7 +815,7 @@ export class GameLogic {
     });
   }
 
-  private async handleSpecialDeath(gameState: GameState, player: Player, votedOut: boolean): Promise<void> {
+  private async handleSpecialDeath(gameCode: string, gameState: GameState, player: Player, votedOut: boolean): Promise<void> {
     if (player.role === 'hunter') {
       // Hunter gets to eliminate someone (would need additional logic)
       await storage.addChatMessage({
@@ -835,7 +851,7 @@ export class GameLogic {
   }
 
   async leaveGame(gameCode: string, playerId: string): Promise<boolean> {
-    const gameState = await this.getGameState(gameCode);
+    let gameState = await this.getGameState(gameCode);
     if (!gameState) return false;
 
     const leavingPlayer = gameState.players.find(p => p.playerId === playerId);
@@ -852,15 +868,21 @@ export class GameLogic {
 
     const removed = await storage.removePlayerFromGame(gameState.game.id, playerId);
     if (removed) {
-      // Update local state
-      gameState.players = gameState.players.filter(p => p.playerId !== playerId);
-      gameState.alivePlayers = gameState.alivePlayers.filter(p => p.playerId !== playerId);
-      gameState.deadPlayers = gameState.deadPlayers.filter(p => p.playerId !== playerId);
-
       // Remove any pending votes or actions from the disconnected player
-      delete gameState.votes[playerId];
-      delete gameState.nightActions[playerId];
-      delete gameState.seerInvestigationsLeft[playerId];
+      const gameVotes = this.votes.get(gameCode) || {};
+      delete gameVotes[playerId];
+      this.votes.set(gameCode, gameVotes);
+
+      const gameNightActions = this.nightActions.get(gameCode) || {};
+      delete gameNightActions[playerId];
+      this.nightActions.set(gameCode, gameNightActions);
+
+      const gameSeerInvestigations = this.seerInvestigationsLeft.get(gameCode) || {};
+      delete gameSeerInvestigations[playerId];
+      this.seerInvestigationsLeft.set(gameCode, gameSeerInvestigations);
+
+      // Re-fetch the game state after removal
+      gameState = await this.getGameState(gameCode) as GameState;
 
       // Handle game state based on phase and remaining players
       await this.handlePlayerDisconnection(gameState, gameCode);
@@ -870,7 +892,6 @@ export class GameLogic {
         if (gameState.game.status === 'waiting') {
           // Safe to delete the game entirely
           await storage.deleteGame(gameCode);
-          this.gameStates.delete(gameCode);
         } else {
           // Game was in progress – mark as finished and clear timers but keep DB row
           await this.endGame(gameCode, 'Game ended due to all players leaving');
@@ -883,25 +904,23 @@ export class GameLogic {
       const remainingHost = gameState.players.find(p => p.isHost);
       if (!remainingHost) {
         const newHost = gameState.players[0];
-        await storage.updatePlayer(gameState.game.id, newHost.playerId, { isHost: true });
-        newHost.isHost = true;
+        if (newHost) {
+          await storage.updatePlayer(gameState.game.id, newHost.playerId, { isHost: true });
+          newHost.isHost = true;
 
-        await storage.updateGame(gameCode, { hostId: newHost.playerId });
-        gameState.game.hostId = newHost.playerId;
+          await storage.updateGame(gameCode, { hostId: newHost.playerId });
+          gameState.game.hostId = newHost.playerId;
 
-        await storage.addChatMessage({
-          gameId: gameState.game.id,
-          playerId: null,
-          playerName: 'Game Master',
-          message: `${newHost.name} is now the game host.`,
-          type: 'system'
-        });
+          await storage.addChatMessage({
+            gameId: gameState.game.id,
+            playerId: null,
+            playerName: 'Game Master',
+            message: `${newHost.name} is now the game host.`,
+            type: 'system'
+          });
+        }
       }
-
-      // Update game state in memory
-      this.gameStates.set(gameCode, gameState);
     }
-
     return removed;
   }
 
@@ -918,7 +937,7 @@ export class GameLogic {
       case 'voting':
         // Check if majority can still be reached or all players voted
         const totalVoters = gameState.alivePlayers.length;
-        const currentVotes = Object.keys(gameState.votes).length;
+        const currentVotes = Object.keys(this.votes.get(gameCode) || {}).length;
         
         if (currentVotes >= totalVoters || currentVotes > totalVoters * 0.5) {
           // All players voted or majority reached - end voting early
@@ -934,7 +953,7 @@ export class GameLogic {
         const alivePlayersWithActions = gameState.alivePlayers.filter(p => 
           this.hasNightAction(p.role as Role)
         );
-        const completedActions = Object.keys(gameState.nightActions).length;
+        const completedActions = Object.keys(this.nightActions.get(gameCode) || {}).length;
         
         if (completedActions >= alivePlayersWithActions.length) {
           // All remaining players have acted - resolve night early

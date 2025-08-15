@@ -256,44 +256,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   async function handleChatMessage(ws: ExtendedWebSocket, message: { type: 'chat_message'; gameCode: string; message: string }) {
     try {
-      if (!ws.playerId || !ws.playerName) return;
+      if (!ws.playerId) return;
 
-      const gameState = await gameLogic.getGameState(message.gameCode);
-      if (!gameState) return;
+      const success = await gameLogic.handleChat(message.gameCode, ws.playerId, message.message);
 
-      // Check if player can speak
-      const player = gameState.alivePlayers.find(p => p.playerId === ws.playerId);
-      if (!player) {
+      if (success) {
+        await broadcastGameState(message.gameCode);
+      } else {
         ws.send(JSON.stringify({
           type: 'error',
-          message: 'Dead players cannot speak'
+          message: 'Cannot send chat message'
         }));
-        return;
       }
-
-      if (gameState.phase === 'night') {
-        ws.send(JSON.stringify({
-          type: 'error',
-          message: 'You cannot speak during the night'
-        }));
-        return;
-      }
-
-      const chatMessage = await storage.addChatMessage({
-        gameId: gameState.game.id,
-        playerId: ws.playerId,
-        playerName: ws.playerName,
-        message: message.message,
-        type: 'player'
-      });
-
-      await broadcastToGame(message.gameCode, {
-        type: 'chat_message',
-        message: chatMessage
-      });
 
     } catch (error) {
       console.error('Error handling chat message:', error);
+      ws.send(JSON.stringify({
+        type: 'error',
+        message: 'Failed to send chat message'
+      }));
     }
   }
 
