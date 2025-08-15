@@ -93,10 +93,10 @@
     "zod": "^3.22.4",
     "zod-validation-error": "^3.0.0",
     "typescript": "5.3.3",
-    "tsx": "^4.7.0",
-    "esbuild": "^0.25.6"
+    "tsx": "^4.7.0"
   },
   "devDependencies": {
+    "esbuild": "^0.25.6",
     "@playwright/test": "^1.54.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/connect-pg-simple": "^7.0.3",
