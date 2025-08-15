@@ -183,7 +183,7 @@ export class GameLogic {
         const seerInvestigations = customCount || defaultCount;
 
         const gameSeerInvestigations = this.seerInvestigationsLeft.get(gameCode) || {};
-        gameSeerInvestigations[players[i].playerId] = seerInvestigations;
+        gameSeerInvestigations[playersArr[i].playerId] = seerInvestigations;
         this.seerInvestigationsLeft.set(gameCode, gameSeerInvestigations);
       }
     }
