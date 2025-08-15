@@ -6,12 +6,12 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/env.ts server/index.ts",
     "build:client": "vite build",
-    "build:server": "tsc -p tsconfig.server.json && npx esbuild dist/server/index.js --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js --sourcemap",
-    "build:migrate": "tsc -p tsconfig.server.json && npx esbuild dist/db/migrate.js --platform=node --packages=external --bundle --format=esm --outfile=dist/migrate.js --sourcemap",
+    "build:server": "npx tsc -p tsconfig.server.json && npx esbuild dist/server/index.js --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js --sourcemap",
+    "build:migrate": "npx tsc -p tsconfig.server.json && npx esbuild dist/db/migrate.js --platform=node --packages=external --bundle --format=esm --outfile=dist/migrate.js --sourcemap",
     "copy:migrations": "mkdir -p dist/db && cp -r db/migrations dist/db/",
     "build": "npm run build:client && npm run build:server && npm run build:migrate && npm run copy:migrations",
     "start": "NODE_ENV=production node dist/index.js",
-    "check": "tsc",
+    "check": "npx tsc",
     "db:push": "drizzle-kit push:pg",
     "migrate": "NODE_ENV=production node dist/migrate.js",
     "db:deploy": "npm run db:push && npm run migrate"
