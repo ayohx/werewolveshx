@@ -13,6 +13,22 @@
       "@shared/*": ["./shared/*"]
     }
   },
-  "include": ["server/**/*", "db/**/*", "shared/**/*"],
-  "exclude": ["node_modules", "build", "dist", "**/*.test.ts"]
+  "include": [
+    "server/refactored_*.ts",
+    "server/apply_refactored_schema.sql", 
+    "db/**/*", 
+    "shared/**/*"
+  ],
+  "exclude": [
+    "node_modules", 
+    "build", 
+    "dist", 
+    "**/*.test.ts",
+    "server/index.ts",
+    "server/routes.ts", 
+    "server/storage.ts",
+    "server/services/**/*",
+    "server/env.ts",
+    "server/db.ts"
+  ]
 } 
