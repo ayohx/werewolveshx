@@ -215,10 +215,12 @@ export class MemStorage implements IStorage {
 export class DatabaseStorage implements IStorage {
   async createGame(insertGame: InsertGame): Promise<Game> {
     return await withRetry(async () => {
+      console.log('🔍 DEBUG: About to insert game with data:', JSON.stringify(insertGame, null, 2));
       const [game] = await db
         .insert(games)
         .values(insertGame)
         .returning();
+      console.log('✅ DEBUG: Game created successfully:', JSON.stringify(game, null, 2));
       return game;
     });
   }
