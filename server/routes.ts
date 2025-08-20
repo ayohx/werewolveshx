@@ -214,7 +214,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
       ws.send(JSON.stringify({
         type: 'error',
-        message: 'Failed to create game'
+        message: 'Failed to create game',
+        details: error instanceof Error ? error.message : String(error)
       }));
     }
   }
