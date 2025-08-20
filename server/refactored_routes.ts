@@ -384,8 +384,9 @@ function broadcastToGame(gameCode: string, message: any): void {
 const PORT = process.env.PORT || 10000;
 
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 REFACTORED SERVER running on port ${PORT} - NEW ARCHITECTURE ACTIVE`);
   console.log(`🔗 WebSocket endpoint: ws://localhost:${PORT}/api/ws`);
+  console.log('✨ Using refactored schema and game engine - should resolve database issues');
 });
 
 // Graceful shutdown
