@@ -68,7 +68,13 @@ export class GameLogic {
       status: 'waiting',
       settings: settings as any,
       currentPhase: 'waiting',
-      phaseTimer: 0
+      phaseTimer: 0,
+      nightCount: 0,
+      dayCount: 0,
+      lastPhaseChange: new Date(),
+      requiredActions: [],
+      completedActions: [],
+      phaseEndTime: null
     });
 
     await storage.addPlayerToGame({
