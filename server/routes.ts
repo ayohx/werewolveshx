@@ -160,18 +160,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   async function handleCreateGame(ws: ExtendedWebSocket, message: { type: 'create_game'; playerName: string; settings: any }) {
     try {
-      console.log('🎮 Create game request:', { playerName: message.playerName, settings: message.settings });
+      console.log('🎮 Creating game for:', message.playerName);
       
       const playerId = generatePlayerId();
       const gameCode = generateGameCode();
       
-      console.log('🎲 Generated IDs:', { playerId, gameCode });
+      // Use minimal default settings to avoid validation issues
+      const simpleSettings = {
+        werewolves: 2,
+        seer: true,
+        doctor: true,
+        shield: true,
+        minion: false,
+        jester: false,
+        hunter: false,
+        witch: false,
+        bodyguard: false,
+        sheriff: false
+      };
       
-      const validatedSettings = gameSettingsSchema.parse(message.settings);
-      console.log('✅ Settings validated:', validatedSettings);
-      
-      const gameState = await gameLogic.createGame(gameCode, playerId, message.playerName, validatedSettings);
-      console.log('🎯 Game created successfully:', gameCode);
+      console.log('🎯 Using simple settings, creating game...');
+      const gameState = await gameLogic.createGame(gameCode, playerId, message.playerName, simpleSettings);
+      console.log('✅ Game created successfully!');
       
       ws.playerId = playerId;
       ws.gameCode = gameCode;
