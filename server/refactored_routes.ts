@@ -76,10 +76,8 @@ function serveStatic(app: express.Application) {
   }
 }
 
-// Setup static file serving in production
-if (process.env.NODE_ENV === 'production') {
-  serveStatic(app);
-}
+// Setup static file serving (Railway is always production)
+serveStatic(app);
 
 const httpServer = createServer(app);
 
