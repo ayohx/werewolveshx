@@ -22,18 +22,9 @@ export class GameStorage {
       const [game] = await db
         .insert(games)
         .values({
-          gameCode: gameData.gameCode,
-          hostId: gameData.hostId,
-          status: gameData.status || 'waiting',
-          settings: gameData.settings,
-          currentPhase: gameData.currentPhase || 'waiting',
-          phaseTimer: gameData.phaseTimer || 0,
-          nightCount: gameData.nightCount || 0,
-          dayCount: gameData.dayCount || 0,
-          lastPhaseChange: gameData.lastPhaseChange || new Date(),
-          requiredActions: gameData.requiredActions || [],
-          completedActions: gameData.completedActions || [],
-          phaseEndTime: gameData.phaseEndTime || null,
+          ...gameData,
+          status: gameData.status as any || 'waiting',
+          currentPhase: gameData.currentPhase as any || 'waiting',
         })
         .returning();
         
@@ -84,7 +75,7 @@ export class GameStorage {
         .delete(games)
         .where(eq(games.gameCode, gameCode));
         
-      return result.rowCount > 0;
+      return (result.rowCount || 0) > 0;
     } catch (error) {
       console.error('❌ Failed to delete game:', error);
       return false;
@@ -107,10 +98,8 @@ export class GameStorage {
       const [player] = await db
         .insert(players)
         .values({
-          gameId: playerData.gameId,
-          playerId: playerData.playerId,
-          name: playerData.name,
-          role: playerData.role || null,
+          ...playerData,
+          role: playerData.role as any || null,
           isAlive: playerData.isAlive !== undefined ? playerData.isAlive : true,
           isHost: playerData.isHost !== undefined ? playerData.isHost : false,
           isSheriff: playerData.isSheriff !== undefined ? playerData.isSheriff : false,
@@ -178,7 +167,7 @@ export class GameStorage {
         .delete(players)
         .where(and(eq(players.gameId, gameId), eq(players.playerId, playerId)));
         
-      return result.rowCount > 0;
+      return (result.rowCount || 0) > 0;
     } catch (error) {
       console.error('❌ Failed to remove player:', error);
       return false;
@@ -194,12 +183,11 @@ export class GameStorage {
       const [action] = await db
         .insert(gameActions)
         .values({
-          gameId: actionData.gameId,
-          playerId: actionData.playerId,
-          actionType: actionData.actionType,
+          ...actionData,
+          actionType: actionData.actionType as any,
+          phase: actionData.phase as any,
           targetId: actionData.targetId || null,
           data: actionData.data || {},
-          phase: actionData.phase,
         })
         .returning();
         
@@ -212,14 +200,21 @@ export class GameStorage {
 
   async getGameActionsByGame(gameId: number, phase?: string): Promise<GameAction[]> {
     try {
-      let query = db.select().from(gameActions).where(eq(gameActions.gameId, gameId));
-      
       if (phase) {
-        query = query.where(and(eq(gameActions.gameId, gameId), eq(gameActions.phase, phase as any)));
+        const actions = await db
+          .select()
+          .from(gameActions)
+          .where(and(eq(gameActions.gameId, gameId), eq(gameActions.phase, phase as any)))
+          .orderBy(desc(gameActions.createdAt));
+        return actions;
+      } else {
+        const actions = await db
+          .select()
+          .from(gameActions)
+          .where(eq(gameActions.gameId, gameId))
+          .orderBy(desc(gameActions.createdAt));
+        return actions;
       }
-      
-      const actions = await query.orderBy(desc(gameActions.createdAt));
-      return actions;
     } catch (error) {
       console.error('❌ Failed to get game actions:', error);
       return [];
@@ -235,11 +230,9 @@ export class GameStorage {
       const [message] = await db
         .insert(chatMessages)
         .values({
-          gameId: messageData.gameId,
+          ...messageData,
           playerId: messageData.playerId || null,
-          playerName: messageData.playerName,
-          message: messageData.message,
-          type: messageData.type || 'player',
+          type: (messageData.type || 'player') as any,
         })
         .returning();
         
