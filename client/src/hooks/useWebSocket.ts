@@ -11,7 +11,7 @@ export function useWebSocket() {
     if (ws.current?.readyState === WebSocket.OPEN) return;
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsUrl = `${protocol}//${window.location.host}/api/ws`;
     
     ws.current = new WebSocket(wsUrl);
 
