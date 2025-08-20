@@ -160,12 +160,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   async function handleCreateGame(ws: ExtendedWebSocket, message: { type: 'create_game'; playerName: string; settings: any }) {
     try {
+      console.log('🎮 Create game request:', { playerName: message.playerName, settings: message.settings });
+      
       const playerId = generatePlayerId();
       const gameCode = generateGameCode();
       
+      console.log('🎲 Generated IDs:', { playerId, gameCode });
+      
       const validatedSettings = gameSettingsSchema.parse(message.settings);
+      console.log('✅ Settings validated:', validatedSettings);
       
       const gameState = await gameLogic.createGame(gameCode, playerId, message.playerName, validatedSettings);
+      console.log('🎯 Game created successfully:', gameCode);
       
       ws.playerId = playerId;
       ws.gameCode = gameCode;
@@ -185,7 +191,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }));
 
     } catch (error) {
-      console.error('Error creating game:', error);
+      console.error('❌ Error creating game:', error);
+      console.error('❌ Error details:', error instanceof Error ? error.message : String(error));
+      console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
       ws.send(JSON.stringify({
         type: 'error',
         message: 'Failed to create game'
