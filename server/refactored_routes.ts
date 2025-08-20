@@ -1,6 +1,8 @@
 import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import path from 'path';
+import fs from 'fs';
 import { gameEngine } from './refactored_game_engine';
 import { gameStorage } from './refactored_storage';
 import { wsMessageSchema, type WSMessage } from './refactored_schema';
@@ -52,6 +54,32 @@ app.get('/api/health', async (_req: Request, res: Response) => {
 // ========================================
 // WEBSOCKET SERVER SETUP
 // ========================================
+
+// ========================================
+// STATIC FILE SERVING FOR FRONTEND
+// ========================================
+
+function serveStatic(app: express.Application) {
+  const distPath = path.resolve(__dirname, "..", "dist", "public");
+
+  if (!fs.existsSync(distPath)) {
+    console.warn(`⚠️ Could not find build directory: ${distPath}`);
+    console.warn('Frontend may not be available - make sure to build the client');
+  } else {
+    console.log('📁 Serving static files from:', distPath);
+    app.use(express.static(distPath));
+
+    // Catch-all handler for SPA routing
+    app.use("*", (_req: Request, res: Response) => {
+      res.sendFile(path.resolve(distPath, "index.html"));
+    });
+  }
+}
+
+// Setup static file serving in production
+if (process.env.NODE_ENV === 'production') {
+  serveStatic(app);
+}
 
 const httpServer = createServer(app);
 
