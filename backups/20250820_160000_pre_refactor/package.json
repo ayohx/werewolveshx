@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/env.ts server/index.ts",
     "build:client": "vite build",
-    "build:server": "npx tsc -p tsconfig.server.json && npx esbuild dist/server/refactored_index.js --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js --sourcemap",
+    "build:server": "npx tsc -p tsconfig.server.json && npx esbuild dist/server/index.js --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js --sourcemap",
     "build:migrate": "npx tsc -p tsconfig.server.json && npx esbuild dist/db/migrate.js --platform=node --packages=external --bundle --format=esm --outfile=dist/migrate.js --sourcemap",
     "copy:migrations": "mkdir -p dist/db && cp -r db/migrations dist/db/",
     "build": "npm run build:client && npm run build:server && npm run build:migrate && npm run copy:migrations",
