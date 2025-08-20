@@ -1,5 +1,5 @@
 import { games, players, gameActions, chatMessages, type Game, type Player, type GameAction, type ChatMessage, type InsertGame, type InsertPlayer, type InsertGameAction, type InsertChatMessage } from "../shared/schema";
-import { db } from './db';
+import { db, withRetry } from './db';
 import { eq, and, desc } from 'drizzle-orm';
 
 export interface IStorage {
@@ -214,16 +214,20 @@ export class MemStorage implements IStorage {
 
 export class DatabaseStorage implements IStorage {
   async createGame(insertGame: InsertGame): Promise<Game> {
-    const [game] = await db
-      .insert(games)
-      .values(insertGame)
-      .returning();
-    return game;
+    return await withRetry(async () => {
+      const [game] = await db
+        .insert(games)
+        .values(insertGame)
+        .returning();
+      return game;
+    });
   }
 
   async getGameByCode(gameCode: string): Promise<Game | undefined> {
-    const [game] = await db.select().from(games).where(eq(games.gameCode, gameCode));
-    return game || undefined;
+    return await withRetry(async () => {
+      const [game] = await db.select().from(games).where(eq(games.gameCode, gameCode));
+      return game || undefined;
+    });
   }
 
   async updateGame(gameCode: string, updates: Partial<Game>): Promise<Game | undefined> {
@@ -246,11 +250,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async addPlayerToGame(insertPlayer: InsertPlayer): Promise<Player> {
-    const [player] = await db
-      .insert(players)
-      .values(insertPlayer)
-      .returning();
-    return player;
+    return await withRetry(async () => {
+      const [player] = await db
+        .insert(players)
+        .values(insertPlayer)
+        .returning();
+      return player;
+    });
   }
 
   async getPlayersByGameId(gameId: number): Promise<Player[]> {
