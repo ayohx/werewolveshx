@@ -13,8 +13,27 @@ type ExtendedWebSocket = WebSocket & {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // REST API routes
-  app.get("/api/health", (_req: Request, res: Response) => {
-    res.json({ status: "ok" });
+  app.get("/api/health", async (_req: Request, res: Response) => {
+    try {
+      const { migrationStatus } = await import('./db.js');
+      res.json({ 
+        status: "ok",
+        database: {
+          migration_status: migrationStatus,
+          connected: migrationStatus === 'completed'
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      res.json({ 
+        status: "ok",
+        database: {
+          migration_status: "unknown",
+          connected: false
+        },
+        timestamp: new Date().toISOString()
+      });
+    }
   });
 
   // Get game state

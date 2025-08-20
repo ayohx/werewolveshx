@@ -56,16 +56,30 @@ export async function withRetry<T>(operation: () => Promise<T>, maxRetries: numb
   throw lastError!;
 }
 
-// Run migrations on startup (no-op if already up to date)
-(async () => {
-  let retries = 5;
+// Initialize migrations with graceful failure
+export let migrationStatus = 'pending';
+
+async function initializeMigrations() {
+  let retries = 3;
   while (retries > 0) {
     try {
-      // Test connection first
-      const isConnected = await testConnection();
-      if (!isConnected) {
-        throw new Error('Database connection test failed');
-      }
+      console.log(`Attempting to connect to database (${4 - retries}/3)...`);
+      
+      // Test connection with shorter timeout
+      const testPool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+        max: 2,
+        connectionTimeoutMillis: 10000,
+        idleTimeoutMillis: 5000,
+      });
+      
+      const client = await testPool.connect();
+      await client.query('SELECT 1');
+      client.release();
+      await testPool.end();
+      
+      console.log('✅ Database connection successful');
 
       const __dirname = path.dirname(fileURLToPath(import.meta.url));
       const migrationsFolder = path.resolve(__dirname, "..", "db", "migrations");
@@ -76,19 +90,27 @@ export async function withRetry<T>(operation: () => Promise<T>, maxRetries: numb
         fs.writeFileSync(journalPath, JSON.stringify({ entries: [] }, null, 2));
       }
       
-      await withRetry(() => migrate(db, { migrationsFolder }));
-      console.log("Database migrations are up to date.");
-      break;
+      await migrate(db, { migrationsFolder });
+      console.log("✅ Database migrations completed successfully.");
+      migrationStatus = 'completed';
+      return;
     } catch (err) {
       retries--;
-      console.error(`Failed to run migrations (${5 - retries}/5):`, err);
+      console.error(`❌ Migration attempt failed:`, err instanceof Error ? err.message : String(err));
       if (retries > 0) {
-        console.log(`Retrying in ${6 - retries} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, (6 - retries) * 1000));
-      } else {
-        console.error("All migration attempts failed. Server will continue but database may not be ready.");
-        break;
+        console.log(`🔄 Retrying in ${4 - retries} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, (4 - retries) * 1000));
       }
     }
   }
-})();
+  
+  console.warn("⚠️  Migration failed after all retries. Server will continue with potentially incomplete database setup.");
+  migrationStatus = 'failed';
+}
+
+// Run migrations on startup (non-blocking)
+initializeMigrations().catch(err => {
+  console.error("🚨 Migration initialization failed:", err instanceof Error ? err.message : String(err));
+  migrationStatus = 'failed';
+});
+
