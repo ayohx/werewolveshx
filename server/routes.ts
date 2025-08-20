@@ -13,10 +13,10 @@ type ExtendedWebSocket = WebSocket & {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // REST API routes
-  app.get("/api/health", async (_req: Request, res: Response) => {
+    app.get("/api/health", async (_req: Request, res: Response) => {
     try {
       const { migrationStatus } = await import('./db.js');
-      res.json({ 
+      res.json({
         status: "ok",
         database: {
           migration_status: migrationStatus,
@@ -25,7 +25,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      res.json({ 
+      res.json({
         status: "ok",
         database: {
           migration_status: "unknown",
@@ -34,6 +34,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timestamp: new Date().toISOString()
       });
     }
+  });
+
+  // Test endpoint for WebSocket path
+  app.get("/api/ws", (_req: Request, res: Response) => {
+    console.log('📍 HTTP request to /api/ws - WebSocket upgrade should happen here');
+    res.status(200).send('WebSocket endpoint - use WebSocket protocol');
   });
 
   // Get game state
@@ -63,10 +69,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
   // WebSocket server
+  console.log('🔗 Setting up WebSocket server on path: /api/ws');
   const wss = new WebSocketServer({ 
     server: httpServer, 
     path: '/api/ws'
   });
+  console.log('✅ WebSocket server configured');
 
   const gameConnections = new Map<string, Set<ExtendedWebSocket>>();
 
