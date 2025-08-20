@@ -65,7 +65,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // WebSocket server
   const wss = new WebSocketServer({ 
     server: httpServer, 
-    path: '/ws'
+    path: '/api/ws'
   });
 
   const gameConnections = new Map<string, Set<ExtendedWebSocket>>();

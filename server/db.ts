@@ -60,10 +60,10 @@ export async function withRetry<T>(operation: () => Promise<T>, maxRetries: numb
 export let migrationStatus = 'pending';
 
 async function initializeMigrations() {
-  let retries = 3;
+  let retries = 5;
   while (retries > 0) {
     try {
-      console.log(`Attempting to connect to database (${4 - retries}/3)...`);
+      console.log(`Attempting to connect to database (${6 - retries}/5)...`);
       
       // Test connection with shorter timeout
       const testPool = new Pool({
@@ -98,8 +98,8 @@ async function initializeMigrations() {
       retries--;
       console.error(`❌ Migration attempt failed:`, err instanceof Error ? err.message : String(err));
       if (retries > 0) {
-        console.log(`🔄 Retrying in ${4 - retries} seconds...`);
-        await new Promise(resolve => setTimeout(resolve, (4 - retries) * 1000));
+        console.log(`🔄 Retrying in ${6 - retries} seconds...`);
+        await new Promise(resolve => setTimeout(resolve, (6 - retries) * 1000));
       }
     }
   }
